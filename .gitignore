@@ -1,0 +1,8 @@
+dist/
+ha-wbc-data.json
+ha-wbc-console
+*.exe
+.DS_Store
+ha-wbc-cert.pem
+ha-wbc-key.pem
+*.log
