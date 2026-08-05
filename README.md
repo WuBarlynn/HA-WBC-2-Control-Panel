@@ -8,13 +8,13 @@
 
 ## 截图
 
-<img width="705" height="303" alt="image" src="https://github.com/user-attachments/assets/70b05260-cc67-4661-917f-71eb9cc46c85" />
+<img width="705" height="303" alt="image" src="./images/1.png" />
 
-<img width="257" height="305" alt="image" src="https://github.com/user-attachments/assets/b393b9fb-50f9-4bdf-9bbc-5e00f047e091" />
+<img width="257" height="305" alt="image" src="./images/2.png" />
 
-<img width="257" height="300" alt="image" src="https://github.com/user-attachments/assets/2a7c7d4c-e2d1-48fa-88be-024fa94b717d" />
+<img width="257" height="300" alt="image" src="./images/3.png" />
 
-<img width="201" height="305" alt="image" src="https://github.com/user-attachments/assets/60bef805-ce0e-4375-b2a2-c0ec9261922c" />
+<img width="201" height="305" alt="image" src="./images/4.png" />
 
 
 ## 功能
