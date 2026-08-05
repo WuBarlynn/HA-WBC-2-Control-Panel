@@ -10,11 +10,11 @@
 
 <img width="705" height="303" alt="image" src="./images/1.png" />
 
-<img width="257" height="305" alt="image" src="./images/2.png" />
-
-<img width="257" height="300" alt="image" src="./images/3.png" />
-
-<img width="201" height="305" alt="image" src="./images/4.png" />
+<p>
+  <img width="257" height="305" alt="image" src="./images/2.png" />
+  <img width="257" height="300" alt="image" src="./images/3.png" />
+  <img width="201" height="305" alt="image" src="./images/4.png" />
+</p>
 
 
 ## 功能
