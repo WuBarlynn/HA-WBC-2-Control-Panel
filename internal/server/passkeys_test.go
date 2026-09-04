@@ -136,7 +136,7 @@ func TestPasskeyFullFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	webFS := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}
-	env := &testEnv{t: t, srv: httptest.NewServer(New(st, webFS))}
+	env := &testEnv{t: t, srv: httptest.NewServer(New(st, webFS, nil))}
 	defer env.srv.Close()
 
 	// 初始化并登录

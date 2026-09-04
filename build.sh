@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP=ha-wbc-console
-VERSION="${VERSION:-1.3.0}"
+VERSION="${VERSION:-1.3.6}"
 DIST=dist
 LDFLAGS="-s -w -X main.version=${VERSION}"
 

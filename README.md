@@ -2,7 +2,7 @@
 
 一个使用 Go 编写的 HA-WBC-2 局域网开机卡集中控制面板。程序以单个二进制运行，内嵌响应式中文 Web 页面，无数据库和前端构建依赖，适合部署在电脑、NAS、软路由或家庭服务器上。
 
-> 当前构建版本：`1.3.2`
+> 当前构建版本：`1.3.6`
 >
 > 原作者/项目维护者：**WuBarlynn**。复制、修改、分发或二次开发时，必须保留原作者版权声明和 MIT 许可证，并注明本项目来源。
 
@@ -35,6 +35,7 @@
 - 恢复设备出厂设置
 - 深色/浅色主题及移动端响应式布局
 - 管理员密码与 WebAuthn Passkey 登录：通过 HTTPS 域名访问时自动启用 Passkey 能力，无需额外配置即可注册并使用指纹、面容或安全密钥登录
+- Apple 家庭（HomeKit）桥接：在系统设置中启用、扫码配对并查看状态，每台开机卡提供主机电源、来电自启、童锁和温度组件，可通过家庭 App、Siri 与自动化控制
 - 内置模拟设备，方便在没有硬件时体验和测试
 
 ## 工作方式
@@ -48,6 +49,7 @@
 Go HTTP Server
    ├── 管理员认证 / Passkey
    ├── JSON 文件存储
+   ├── HomeKit Bridge ── mDNS / HAP ── Apple 家庭 / Siri
    └── HA-WBC-2 API Client
           │  设备 Bearer tK
           ▼
@@ -58,29 +60,29 @@ Go HTTP Server
 
 ### 使用预编译程序
 
-从项目 Release 或本地 `dist/` 目录下载对应平台的 `1.3.2` 二进制：
+从项目 Release 或本地 `dist/` 目录下载对应平台的 `1.3.6` 二进制：
 
 | 平台 | 文件名 |
 | --- | --- |
-| Linux x86-64 | `ha-wbc-console_1.3.2_linux_amd64` |
-| Linux ARM64 | `ha-wbc-console_1.3.2_linux_arm64` |
-| macOS Intel | `ha-wbc-console_1.3.2_darwin_amd64` |
-| macOS Apple Silicon | `ha-wbc-console_1.3.2_darwin_arm64` |
-| Windows x86-64 | `ha-wbc-console_1.3.2_windows_amd64.exe` |
-| Windows ARM64 | `ha-wbc-console_1.3.2_windows_arm64.exe` |
-| Windows 32 位 | `ha-wbc-console_1.3.2_windows_386.exe` |
+| Linux x86-64 | `ha-wbc-console_1.3.6_linux_amd64` |
+| Linux ARM64 | `ha-wbc-console_1.3.6_linux_arm64` |
+| macOS Intel | `ha-wbc-console_1.3.6_darwin_amd64` |
+| macOS Apple Silicon | `ha-wbc-console_1.3.6_darwin_arm64` |
+| Windows x86-64 | `ha-wbc-console_1.3.6_windows_amd64.exe` |
+| Windows ARM64 | `ha-wbc-console_1.3.6_windows_arm64.exe` |
+| Windows 32 位 | `ha-wbc-console_1.3.6_windows_386.exe` |
 
 Linux/macOS：
 
 ```bash
-chmod +x ha-wbc-console_1.3.2_linux_amd64
-./ha-wbc-console_1.3.2_linux_amd64
+chmod +x ha-wbc-console_1.3.6_linux_amd64
+./ha-wbc-console_1.3.6_linux_amd64
 ```
 
 Windows：
 
 ```powershell
-.\ha-wbc-console_1.3.2_windows_amd64.exe
+.\ha-wbc-console_1.3.6_windows_amd64.exe
 ```
 
 打开 `http://127.0.0.1:8088`。首次运行时设置管理员密码，然后添加开机卡的名称、局域网地址和设备所连 WiFi 的密码。
@@ -118,6 +120,18 @@ Windows：
 - WiFi 密码：`12345678`
 
 在页面中按上述信息添加设备即可测试控制、状态查询和固件更新流程。
+
+## Apple 家庭（HomeKit）
+
+进入「系统设置 → Apple 家庭」，确认桥名称、监听端口和随机生成的 8 位 PIN，然后点击「启用并准备配对」。
+
+- 在电脑上打开控制台时：使用 iPhone/iPad 的「家庭」App 扫描设置页二维码。
+- 在同一台 iPhone/iPad 上打开控制台时：进入「家庭 → + → 添加配件 → 更多选项」，选择正在广播的 `HA-WBC-2 控制台`，再输入设置页配对码。
+- 配对完成后，每台开机卡会出现 4 个组件：主机电源、来电自启、童锁、温度。
+- 新增、编辑或删除开机卡后，桥会自动更新配件列表并保持已有设备的稳定配件 ID。
+- 「重置 Apple 家庭配对」会撤销控制台保存的 Apple 控制器授权，但保留桥身份；重置后也需要在家庭 App 中移除旧桥再重新添加。
+
+HomeKit 使用局域网发现与本地加密通信。运行控制台的主机与 iPhone/iPad 必须位于可互相访问的同一局域网；防火墙需允许 UDP `5353`（mDNS）和设置页显示的 HomeKit TCP 端口（默认 `51826`）。容器部署通常需要 host 网络，或正确转发 mDNS 与 HAP 端口。
 
 ## HTTPS 与 Passkey
 
@@ -157,7 +171,7 @@ go build -o ha-wbc-console .
 构建全部支持平台：
 
 ```bash
-VERSION=1.3.2 ./build.sh
+VERSION=1.3.6 ./build.sh
 ```
 
 输出位于 `dist/`，目标平台包括 Linux、macOS 和 Windows 的 amd64/arm64，以及 Windows 386。
@@ -171,8 +185,9 @@ VERSION=1.3.2 ./build.sh
 ├── build.sh                        # 多平台交叉编译
 ├── HA-WBC-2_API_Documentation.md   # 设备 API 参考文档
 ├── internal/
-│   ├── server/                     # 控制台 API、认证、设备代理及 Passkey 路由
-│   ├── store/                      # JSON 持久化与密码哈希
+│   ├── server/                     # 控制台 API、认证、设备代理、Passkey 与 HomeKit 配置路由
+│   ├── store/                      # JSON 持久化、密码哈希及 HomeKit 协议键值存储
+│   ├── homekit/                    # HAP 桥生命周期、组件映射、mDNS 与状态同步
 │   ├── wbc/                        # HA-WBC-2 HTTP API 客户端
 │   ├── webauthn/                   # WebAuthn 注册和登录验证
 │   └── mockdev/                    # 模拟设备服务
@@ -189,7 +204,8 @@ VERSION=1.3.2 ./build.sh
 - 控制台会话令牌为 32 字节随机值，有效期 24 小时并采用滑动续期。
 - WebAuthn 支持 ES256/RS256，挑战为一次性且有过期时间。
 - 数据以 JSON 原子写入，文件权限为 `0600`。
-- 数据文件包含设备 WiFi 密码和缓存的设备 token，请妥善限制文件访问权限，且不要提交到 Git。
+- HomeKit 桥身份密钥、配对 PIN 和 Apple 控制器公钥保存在同一数据文件中，HomeKit 会话通信由 HAP 加密。
+- 数据文件包含设备 WiFi 密码、缓存的设备 token 和 HomeKit 配对数据，请妥善限制文件访问权限，且不要提交到 Git。
 - HA-WBC-2 设备自身仅提供 HTTP API，因此设备通信应限制在可信局域网中。
 - 对外开放控制面板时应使用 HTTPS、强管理员密码和网络访问控制。
 
@@ -201,6 +217,8 @@ VERSION=1.3.2 ./build.sh
 - 设备通信没有 TLS，这是设备固件 API 的限制。
 - 会话仅保存在内存中，控制面板重启后需要重新登录。
 - Passkey 与注册时使用的域名绑定；更换访问域名后需重新注册。
+- HomeKit 依赖同网段 mDNS；访客网络、VLAN、容器 NAT 或防火墙可能阻止发现，默认需要 UDP `5353` 和 TCP `51826`。
+- 本项目实现的是非认证 HomeKit 配件桥，不带 Apple/MFi 官方认证标识；家庭 App 可能显示“未认证配件”提示。
 - `fs_version` 当前按设备接口要求使用 `1.0.3`。
 
 ## 开发验证

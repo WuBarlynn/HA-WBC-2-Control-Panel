@@ -7,6 +7,7 @@
   --green: #22c55e;
   --red: #ef4444;
   --amber: #f59e0b;
+  --home: #ff9f0a;
   --radius: 14px;
 }
 
@@ -208,6 +209,79 @@ body {
   display: flex; align-items: center; gap: 8px;
 }
 .settings-sub .icon { width: 15px; height: 15px; color: var(--accent1); }
+
+/* Apple 家庭桥接 */
+.modal-settings { max-width: 500px; }
+.hk-card {
+  position: relative;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background:
+    radial-gradient(280px 150px at 100% 0, color-mix(in srgb, var(--home) 16%, transparent), transparent 72%),
+    var(--card-2);
+}
+.hk-card::before {
+  content: "";
+  position: absolute; inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(var(--home), #ff6b35);
+}
+.hk-status-row { display: flex; align-items: center; gap: 10px; }
+.hk-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; flex: none;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #ffb340, #ff7a1a);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(255, 132, 27, 0.25);
+}
+.hk-mark .icon { width: 19px; height: 19px; }
+.hk-status-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; line-height: 1.35; }
+.hk-status-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.hk-status-copy span { color: var(--text-dim); font-size: 11.5px; }
+.hk-pairing {
+  display: grid; grid-template-columns: 132px 1fr; align-items: center; gap: 16px;
+  margin-top: 14px; padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--home) 32%, var(--border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+}
+.hk-qr-wrap {
+  display: flex; align-items: center; justify-content: center;
+  width: 132px; height: 132px;
+  padding: 7px; border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.16);
+}
+.hk-qr { display: block; width: 118px; height: 118px; image-rendering: pixelated; }
+.hk-qr-missing { color: #777; font-size: 11px; text-align: center; }
+.hk-pair-copy { display: flex; align-items: flex-start; flex-direction: column; min-width: 0; }
+.hk-eyebrow { color: var(--text-dim); font-size: 9.5px; letter-spacing: 0.13em; }
+.hk-code {
+  margin: 2px 0 9px;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: clamp(21px, 6vw, 29px); line-height: 1.15; letter-spacing: 0.035em;
+  white-space: nowrap;
+}
+.hk-steps { margin: 12px 0 0 19px; color: var(--text-dim); font-size: 11.8px; }
+.hk-steps li { padding-left: 3px; }
+.hk-paired-note {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 13px; padding: 11px 12px;
+  border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 11px;
+  background: rgba(34, 197, 94, 0.08);
+}
+.hk-paired-note > .icon { margin-top: 2px; color: var(--green); }
+.hk-paired-note div { display: flex; flex-direction: column; }
+.hk-paired-note b { font-size: 12.5px; }
+.hk-paired-note span { color: var(--text-dim); font-size: 11.5px; }
+.hk-form { margin-top: 14px; }
+.hk-field-grid { display: grid; grid-template-columns: 1fr 112px; gap: 10px; }
+.hk-form .field { margin-bottom: 10px; }
+.hk-enable-row { margin: 2px 0 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.hk-reset { margin-top: 9px; }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(14px); }
@@ -526,4 +600,8 @@ body {
   .ctrl-grid { grid-template-columns: 1fr; }
   .page-head { align-items: stretch; flex-direction: column; }
   .page-actions .btn { flex: 1; }
+  .modal-settings { padding: 20px 16px; }
+  .hk-pairing { grid-template-columns: 1fr; justify-items: center; }
+  .hk-pair-copy { align-items: center; }
+  .hk-field-grid { grid-template-columns: 1fr; gap: 0; }
 }

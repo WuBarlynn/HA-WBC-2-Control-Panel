@@ -13,6 +13,8 @@ const S = {
   drawerSnap: { b: "", k: "" }, // 抽屉动态区快照
   passkeys: 0,          // 当前访问主机名下可用的通行密钥数
   rpId: "",
+  homeKitTimer: null,
+  homeKitSnap: "",
 };
 
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -129,11 +131,15 @@ function toast(msg, type) {
 
 // ---------- 模态 ----------
 function openModal(html) {
+  stopHomeKitStatusPoll();
+  $("#modal").className = "modal";
   $("#modal").innerHTML = html;
   $("#modal-mask").classList.remove("hidden");
 }
 function closeModal() {
+  stopHomeKitStatusPoll();
   $("#modal-mask").classList.add("hidden");
+  $("#modal").className = "modal";
   $("#modal").innerHTML = "";
 }
 // 弹窗不响应遮罩点击,避免误触关闭,只能通过按钮关闭
@@ -307,11 +313,15 @@ $("#btn-logout").addEventListener("click", async () => {
   showAuth("login");
 });
 
-// ---------- 系统设置(修改密码 + 通行密钥) ----------
-$("#btn-settings").addEventListener("click", () => {
+// ---------- 系统设置(密码 + 通行密钥 + Apple 家庭) ----------
+$("#btn-settings").addEventListener("click", openSystemSettings);
+
+function openSystemSettings() {
   const sup = passkeySupport();
   openModal(`
     <h3>系统设置</h3>
+    <div class="settings-sub"><svg class="icon"><use href="#i-home"/></svg>Apple 家庭</div>
+    <div id="hk-panel"><div class="skeleton" style="height:164px"></div></div>
     <div class="settings-sub"><svg class="icon"><use href="#i-shield"/></svg>修改管理员密码</div>
     <form id="pwd-form">
       <div class="field"><label>原密码</label><input type="password" id="pwd-old" required></div>
@@ -333,7 +343,7 @@ $("#btn-settings").addEventListener("click", () => {
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost" id="settings-close">关闭</button>
     </div>`);
-
+  $("#modal").classList.add("modal-settings");
   $("#settings-close").onclick = closeModal;
 
   $("#pwd-form").onsubmit = async (e) => {
@@ -370,8 +380,163 @@ $("#btn-settings").addEventListener("click", () => {
     };
   }
 
+  S.homeKitSnap = "";
+  loadHomeKitPanel(true);
   loadPasskeyList();
-});
+}
+
+function stopHomeKitStatusPoll() {
+  if (S.homeKitTimer) {
+    clearInterval(S.homeKitTimer);
+    S.homeKitTimer = null;
+  }
+}
+
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const input = document.createElement("textarea");
+  input.value = text;
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.appendChild(input);
+  input.select();
+  document.execCommand("copy");
+  input.remove();
+}
+
+async function loadHomeKitPanel(forceRender) {
+  const box = $("#hk-panel");
+  if (!box) return;
+  let h;
+  try {
+    h = await api("/api/homekit");
+  } catch (err) {
+    box.innerHTML = `<div class="card-err">${esc(err.message)}</div>`;
+    return;
+  }
+  const snap = JSON.stringify(h);
+  if (!forceRender && snap === S.homeKitSnap) return;
+  S.homeKitSnap = snap;
+  renderHomeKitPanel(box, h);
+
+  stopHomeKitStatusPoll();
+  if (h.enabled && h.running && !h.paired) {
+    S.homeKitTimer = setInterval(() => loadHomeKitPanel(false), 2500);
+  }
+}
+
+function renderHomeKitPanel(box, h) {
+  const state = !h.enabled
+    ? { cls: "", text: "已停用", sub: h.paired ? "已保留现有配对,重新启用后自动恢复" : "启用后可用家庭 App、Siri 与自动化控制" }
+    : h.error
+      ? { cls: "err", text: "运行异常", sub: h.error }
+      : h.running && h.paired
+        ? { cls: "ok", text: "已配对", sub: `已授权 ${h.pairingCount || 1} 个 Apple 家庭控制器` }
+        : h.running
+          ? { cls: "warn", text: "等待配对", sub: "桥已在局域网广播,可从家庭 App 添加" }
+          : { cls: "warn", text: "正在启动", sub: "正在准备 HomeKit 桥" };
+  const pairing = h.enabled && h.running && !h.paired ? `
+    <div class="hk-pairing">
+      <div class="hk-qr-wrap">
+        ${h.qrCode ? `<img class="hk-qr" src="${h.qrCode}" alt="Apple 家庭配对二维码">` : `<div class="hk-qr-missing">二维码生成失败</div>`}
+      </div>
+      <div class="hk-pair-copy">
+        <span class="hk-eyebrow">HOMEKIT SETUP CODE</span>
+        <strong class="hk-code">${esc(h.pin)}</strong>
+        <button type="button" class="btn btn-sm" id="hk-copy"><svg class="icon"><use href="#i-copy"/></svg>复制配对码</button>
+      </div>
+    </div>
+    <ol class="hk-steps">
+      <li>打开 iPhone 或 iPad 的「家庭」App</li>
+      <li>点右上角「+」→「添加配件」；扫码，或在「更多选项」中选择此桥</li>
+      <li>确认添加 ${h.deviceCount} 台开机卡；配对状态会在这里自动更新</li>
+    </ol>` : "";
+  const paired = h.enabled && h.running && h.paired ? `
+    <div class="hk-paired-note">
+      <svg class="icon"><use href="#i-check"/></svg>
+      <div><b>Apple 家庭已接管设备</b><span>每台开机卡包含电源、来电自启、童锁和温度组件</span></div>
+    </div>` : "";
+
+  box.innerHTML = `
+    <div class="hk-card">
+      <div class="hk-status-row">
+        <div class="hk-mark"><svg class="icon"><use href="#i-home"/></svg></div>
+        <div class="hk-status-copy"><b>${esc(h.name)}</b><span>${esc(state.sub)}</span></div>
+        <span class="badge ${state.cls}">${esc(state.text)}</span>
+      </div>
+      ${pairing}
+      ${paired}
+      <form id="hk-form" class="hk-form">
+        <div class="hk-field-grid">
+          <div class="field"><label>桥名称</label><input id="hk-name" required maxlength="64" value="${esc(h.name)}"></div>
+          <div class="field"><label>监听端口</label><input id="hk-port" required type="number" min="1" max="65535" value="${esc(h.port)}"></div>
+        </div>
+        <div class="field"><label>配对 PIN</label><input id="hk-pin" required inputmode="numeric" maxlength="10" value="${esc(h.pin)}" ${h.paired ? "readonly" : ""}><div class="hint">8 位数字；桥已配对时需先重置配对才能修改</div></div>
+        <div class="toggle-row hk-enable-row">
+          <div class="t-label"><div><div class="t-title">启用 Apple 家庭桥</div><div class="t-sub">占用 TCP ${esc(h.port)} 与局域网 UDP 5353 (mDNS)</div></div></div>
+          <label class="switch"><input type="checkbox" id="hk-enabled" ${h.enabled ? "checked" : ""}><span class="slider"></span></label>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="hk-save">${h.enabled ? "保存并重启桥" : "启用并准备配对"}</button>
+      </form>
+      ${h.paired ? `<button type="button" class="btn btn-outline-danger btn-block hk-reset" id="hk-reset">重置 Apple 家庭配对</button>` : ""}
+    </div>`;
+
+  $("#hk-form").onsubmit = async (e) => {
+    e.preventDefault();
+    stopHomeKitStatusPoll();
+    const submitted = {
+      enabled: $("#hk-enabled").checked,
+      name: $("#hk-name").value.trim(),
+      pin: $("#hk-pin").value.trim(),
+      port: Number($("#hk-port").value),
+    };
+    await withBusy($("#hk-save"), async () => {
+      try {
+        await api("/api/homekit", { method: "PUT", body: submitted });
+        toast(submitted.enabled ? "Apple 家庭桥已启动" : "Apple 家庭桥已停用", "success");
+        S.homeKitSnap = "";
+        await loadHomeKitPanel(true);
+      } catch (err) {
+        toast(err.message, "error");
+        await loadHomeKitPanel(true);
+      }
+    });
+  };
+
+  const copyBtn = $("#hk-copy");
+  if (copyBtn) {
+    copyBtn.onclick = async () => {
+      try {
+        await copyText(h.pin);
+        toast("HomeKit 配对码已复制", "success");
+      } catch (err) {
+        toast("无法复制配对码", "error");
+      }
+    };
+  }
+
+  const resetBtn = $("#hk-reset");
+  if (resetBtn) {
+    resetBtn.onclick = async () => {
+      const yes = await confirmDialog({
+        title: "重置 Apple 家庭配对",
+        text: "控制台会撤销现有家庭授权。请同时在 Apple 家庭 App 中移除此桥，之后才能重新添加。",
+        confirmText: "重置配对",
+      });
+      if (!yes) { openSystemSettings(); return; }
+      try {
+        await api("/api/homekit/reset", { method: "POST" });
+        toast("Apple 家庭配对已重置", "success");
+      } catch (err) {
+        toast(err.message, "error");
+      }
+      openSystemSettings();
+    };
+  }
+}
 
 // 加载并渲染通行密钥列表(系统设置弹窗内)
 async function loadPasskeyList() {

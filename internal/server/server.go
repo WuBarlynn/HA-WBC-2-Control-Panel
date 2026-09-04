@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"ha-wbc-console/internal/homekit"
 	"ha-wbc-console/internal/store"
 	"ha-wbc-console/internal/wbc"
 	"ha-wbc-console/internal/webauthn"
@@ -21,16 +22,18 @@ type Server struct {
 	wbc        *wbc.Client
 	sessions   *sessions
 	challenges *webauthn.Challenges
+	homekit    *homekit.Manager
 	mux        *http.ServeMux
 }
 
 // New 创建服务并注册路由,webFS 为前端静态资源根(已定位到 web 目录)。
-func New(st *store.Store, webFS fs.FS) *Server {
+func New(st *store.Store, webFS fs.FS, hk *homekit.Manager) *Server {
 	s := &Server{
 		store:      st,
 		wbc:        wbc.New(),
 		sessions:   newSessions(),
 		challenges: webauthn.NewChallenges(),
+		homekit:    hk,
 		mux:        http.NewServeMux(),
 	}
 
@@ -48,6 +51,9 @@ func New(st *store.Store, webFS fs.FS) *Server {
 	s.mux.Handle("POST /api/passkey/register/begin", s.authed(s.handlePasskeyRegisterBegin))
 	s.mux.Handle("POST /api/passkey/register/finish", s.authed(s.handlePasskeyRegisterFinish))
 	s.mux.Handle("DELETE /api/passkey/{id}", s.authed(s.handlePasskeyDelete))
+	s.mux.Handle("GET /api/homekit", s.authed(s.handleHomeKitStatus))
+	s.mux.Handle("PUT /api/homekit", s.authed(s.handleHomeKitConfigure))
+	s.mux.Handle("POST /api/homekit/reset", s.authed(s.handleHomeKitReset))
 
 	s.mux.Handle("GET /api/devices", s.authed(s.handleListDevices))
 	s.mux.Handle("POST /api/devices", s.authed(s.handleAddDevice))

@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"ha-wbc-console/internal/homekit"
 	"ha-wbc-console/internal/mockdev"
 	"ha-wbc-console/internal/server"
 	"ha-wbc-console/internal/store"
@@ -76,9 +77,18 @@ func main() {
 		log.Fatalf("加载内嵌前端资源失败: %v", err)
 	}
 
+	homeKitManager, err := homekit.New(st, version)
+	if err != nil {
+		log.Fatalf("初始化 HomeKit 失败: %v", err)
+	}
+	if err := homeKitManager.Start(); err != nil {
+		// 控制台仍可启动，管理员可在系统设置中修正端口或重新启用。
+		log.Printf("[homekit] 自动启动失败: %v", err)
+	}
+
 	httpServer := &http.Server{
 		Addr:              *addr,
-		Handler:           server.New(st, webFS),
+		Handler:           server.New(st, webFS, homeKitManager),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -109,6 +119,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Printf("正在退出...")
+	homeKitManager.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(ctx)

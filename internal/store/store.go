@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,9 +22,9 @@ import (
 const pbkdf2Iterations = 120000
 
 var (
-	ErrNotFound      = errors.New("设备不存在")
-	ErrBadPassword   = errors.New("密码错误")
-	ErrAlreadySetup  = errors.New("系统已初始化")
+	ErrNotFound       = errors.New("设备不存在")
+	ErrBadPassword    = errors.New("密码错误")
+	ErrAlreadySetup   = errors.New("系统已初始化")
 	ErrNotInitialized = errors.New("系统尚未初始化")
 )
 
@@ -52,11 +53,22 @@ type Passkey struct {
 	LastUsedAt time.Time `json:"lastUsedAt,omitzero"`
 }
 
+// HomeKitConfig 是 Apple 家庭桥接服务的持久化配置。
+type HomeKitConfig struct {
+	Enabled bool   `json:"enabled"`
+	Name    string `json:"name"`
+	Pin     string `json:"pin"`     // 8 位纯数字,展示时再加入连字符
+	Port    int    `json:"port"`    // HAP TCP 监听端口
+	SetupID string `json:"setupId"` // HomeKit 二维码使用的稳定 4 位标识
+}
+
 type persisted struct {
-	AdminHash  string     `json:"adminHash"`
-	UserHandle []byte     `json:"userHandle,omitempty"` // WebAuthn 用户句柄
-	Devices    []*Device  `json:"devices"`
-	Passkeys   []*Passkey `json:"passkeys,omitempty"`
+	AdminHash   string            `json:"adminHash"`
+	UserHandle  []byte            `json:"userHandle,omitempty"` // WebAuthn 用户句柄
+	Devices     []*Device         `json:"devices"`
+	Passkeys    []*Passkey        `json:"passkeys,omitempty"`
+	HomeKit     HomeKitConfig     `json:"homeKit,omitempty"`
+	HomeKitData map[string][]byte `json:"homeKitData,omitempty"` // HAP 桥身份、密钥与控制器配对记录
 }
 
 // Store 线程安全的 JSON 文件存储。
@@ -94,11 +106,37 @@ func (s *Store) save() error {
 			return err
 		}
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+
+	f, err := os.CreateTemp(dir, "."+filepath.Base(s.path)+".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	// 尽力同步目录项；部分平台/文件系统不支持目录 Sync，数据文件本身已同步。
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
 }
 
 // ---- 管理员密码 ----
@@ -267,6 +305,127 @@ func (s *Store) SetDeviceFlag(id, flag string, v bool) {
 			return
 		}
 	}
+}
+
+// ---- HomeKit 配置与协议存储 ----
+
+// HomeKitConfig 返回当前桥接配置的副本。
+func (s *Store) HomeKitConfig() HomeKitConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data.HomeKit
+}
+
+// SetHomeKitConfig 保存桥接配置。
+func (s *Store) SetHomeKitConfig(cfg HomeKitConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.data.HomeKit
+	s.data.HomeKit = cfg
+	if err := s.save(); err != nil {
+		s.data.HomeKit = old
+		return err
+	}
+	return nil
+}
+
+// HomeKitStore 将现有原子 JSON 存储适配为 HAP 所需的键值存储。
+type HomeKitStore struct {
+	s *Store
+}
+
+func (s *Store) HomeKitStore() *HomeKitStore {
+	return &HomeKitStore{s: s}
+}
+
+func (h *HomeKitStore) Set(key string, value []byte) error {
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	if h.s.data.HomeKitData == nil {
+		h.s.data.HomeKitData = make(map[string][]byte)
+	}
+	old, hadOld := h.s.data.HomeKitData[key]
+	cp := append([]byte(nil), value...)
+	h.s.data.HomeKitData[key] = cp
+	if err := h.s.save(); err != nil {
+		if hadOld {
+			h.s.data.HomeKitData[key] = old
+		} else {
+			delete(h.s.data.HomeKitData, key)
+		}
+		return err
+	}
+	return nil
+}
+
+func (h *HomeKitStore) Get(key string) ([]byte, error) {
+	h.s.mu.RLock()
+	defer h.s.mu.RUnlock()
+	value, ok := h.s.data.HomeKitData[key]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return append([]byte(nil), value...), nil
+}
+
+func (h *HomeKitStore) Delete(key string) error {
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
+	old, ok := h.s.data.HomeKitData[key]
+	if !ok {
+		return os.ErrNotExist
+	}
+	delete(h.s.data.HomeKitData, key)
+	if err := h.s.save(); err != nil {
+		h.s.data.HomeKitData[key] = old
+		return err
+	}
+	return nil
+}
+
+func (h *HomeKitStore) KeysWithSuffix(suffix string) ([]string, error) {
+	h.s.mu.RLock()
+	defer h.s.mu.RUnlock()
+	keys := make([]string, 0)
+	for key := range h.s.data.HomeKitData {
+		if strings.HasSuffix(key, suffix) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
+// ClearHomeKitPairings 清除 Apple 控制器授权,保留桥的身份和密钥。
+func (s *Store) ClearHomeKitPairings() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old := s.data.HomeKitData
+	kept := make(map[string][]byte, len(old))
+	for key, value := range old {
+		if !strings.HasSuffix(key, ".pairing") {
+			kept[key] = value
+		}
+	}
+	s.data.HomeKitData = kept
+	if err := s.save(); err != nil {
+		s.data.HomeKitData = old
+		return err
+	}
+	return nil
+}
+
+// HomeKitPairingCount 返回已授权 Apple 控制器数量。
+func (s *Store) HomeKitPairingCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for key := range s.data.HomeKitData {
+		if strings.HasSuffix(key, ".pairing") {
+			n++
+		}
+	}
+	return n
 }
 
 // ---- 通行密钥 ----

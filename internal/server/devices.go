@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -78,6 +79,7 @@ func (s *Server) handleAddDevice(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, err.Error())
 		return
 	}
+	s.syncHomeKit()
 	ok(w, toPublic(dev))
 }
 
@@ -105,6 +107,7 @@ func (s *Server) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusConflict, err.Error())
 		return
 	}
+	s.syncHomeKit()
 	ok(w, toPublic(dev))
 }
 
@@ -113,7 +116,19 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, err.Error())
 		return
 	}
+	s.syncHomeKit()
 	ok(w, nil)
+}
+
+func (s *Server) syncHomeKit() {
+	if s.homekit == nil {
+		return
+	}
+	if err := s.homekit.SyncDevices(); err != nil {
+		// 设备数据已经成功保存；桥接异常通过 HomeKit 状态接口展示，
+		// 不应让前端误以为设备 CRUD 失败。
+		log.Printf("[homekit] 同步设备列表失败: %v", err)
+	}
 }
 
 // handleTestDevice 测试设备连通性与密码正确性。
