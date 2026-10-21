@@ -67,19 +67,3 @@ curl -sS -X POST 'https://wbc.wubarlynn.top/api/tokens' \
 curl -sS -X DELETE 'https://wbc.wubarlynn.top/api/tokens/TOKEN_ID' \
   -H 'Authorization: Bearer SESSION_TOKEN'
 ```
-
-## 部署注意（现网 OpenWrt）
-
-1. 在本机 `~/dev/HA-WBC-2-Control-Panel` 用 `./build.sh`（或交叉编译）产出目标平台二进制。  
-2. 停掉 OpenWrt 上旧进程，替换二进制；**保留**现有 `ha-wbc-data.json`（管理员密码、设备、Passkey 不变；新字段 `apiTokens` 会自动出现）。  
-3. Cloudflare Tunnel / DNS **无需改动**。  
-4. 浏览器登录 → 设置页创建 Token → 把明文交给助手配置；用上面 curl 自测 `overview` / `power`。  
-5. 轮换：设置页吊销旧 Token → 新建 → 更新助手侧凭据。
-
-## 本地验证
-
-```bash
-cd ~/dev/HA-WBC-2-Control-Panel
-GOPROXY=https://goproxy.cn,direct go test ./internal/server/ -count=1
-GOPROXY=https://goproxy.cn,direct go build -o /tmp/ha-wbc-console .
-```
