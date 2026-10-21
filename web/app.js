@@ -340,6 +340,18 @@ function openSystemSettings() {
     </form>
     <p class="pk-hint" style="text-align:left">通行密钥与当前访问的域名绑定,换用其他地址访问时需另行注册</p>
     ` : `<p class="pk-hint" style="text-align:left">无法在此添加通行密钥:${esc(sup.why)}</p>`}
+    <div class="settings-sub"><svg class="icon"><use href="#i-key"/></svg>API Token（助手 / 自动化）</div>
+    <p class="pk-hint" style="text-align:left;margin-top:0">给 Grok Bot 等助手长期调用接口用。明文只在创建时显示一次；默认权限：读总览 + 电源控制。不可用 Token 管理 Token。</p>
+    <div class="pk-list" id="tok-list"><p class="muted" style="font-size:12.5px">加载中...</p></div>
+    <form id="tok-add-form">
+      <div class="field"><input id="tok-name" maxlength="40" placeholder="名称,如:grok-bot" required></div>
+      <div class="field" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="tok-scope-read" checked> 只读 (read)</label>
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="tok-scope-power" checked> 电源 (power)</label>
+      </div>
+      <button type="submit" class="btn btn-block" id="tok-add-btn"><svg class="icon"><use href="#i-plus"/></svg>创建 API Token</button>
+    </form>
+    <div id="tok-once" class="hidden" style="margin-top:10px"></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost" id="settings-close">关闭</button>
     </div>`);
@@ -383,6 +395,32 @@ function openSystemSettings() {
   S.homeKitSnap = "";
   loadHomeKitPanel(true);
   loadPasskeyList();
+  loadAPITokenList();
+
+  $("#tok-add-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const scopes = [];
+    if ($("#tok-scope-read").checked) scopes.push("read");
+    if ($("#tok-scope-power").checked) scopes.push("power");
+    if (!scopes.length) {
+      toast("请至少选择一项权限", "error");
+      return;
+    }
+    await withBusy($("#tok-add-btn"), async () => {
+      try {
+        const data = await api("/api/tokens", {
+          method: "POST",
+          body: { name: $("#tok-name").value.trim(), scopes },
+        });
+        $("#tok-name").value = "";
+        showAPITokenOnce(data.token, data.record);
+        loadAPITokenList();
+        toast("API Token 已创建，请立即复制保存", "success");
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    });
+  };
 }
 
 function stopHomeKitStatusPoll() {
@@ -578,6 +616,79 @@ async function loadPasskeyList() {
             const st = await api("/api/state", { keepSession: true });
             S.passkeys = st.passkeys || 0;
           } catch (e) { /* 忽略 */ }
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      }
+      $("#btn-settings").click();
+    });
+  });
+}
+
+
+function showAPITokenOnce(plain, record) {
+  const box = $("#tok-once");
+  if (!box) return;
+  box.classList.remove("hidden");
+  const name = (record && record.name) || "token";
+  const scopes = (record && record.scopes) ? record.scopes.join(", ") : "";
+  box.innerHTML = `
+    <div class="hk-card" style="border-color:var(--warn, #d97706)">
+      <div class="hk-status-copy"><b>请立即复制 Token</b>
+        <span>关闭后无法再次查看明文。名称：${esc(name)}${scopes ? " · " + esc(scopes) : ""}</span>
+      </div>
+      <code id="tok-plain" style="display:block;word-break:break-all;font-size:12px;margin:10px 0;padding:10px;background:rgba(0,0,0,.06);border-radius:8px">${esc(plain)}</code>
+      <button type="button" class="btn btn-primary btn-block" id="tok-copy"><svg class="icon"><use href="#i-copy"/></svg>复制 Token</button>
+    </div>`;
+  $("#tok-copy").onclick = async () => {
+    try {
+      await copyText(plain);
+      toast("Token 已复制到剪贴板", "success");
+    } catch (err) {
+      toast("复制失败，请手动选中复制", "error");
+    }
+  };
+}
+
+async function loadAPITokenList() {
+  const box = $("#tok-list");
+  if (!box) return;
+  let list;
+  try {
+    list = await api("/api/tokens");
+  } catch (err) {
+    box.innerHTML = `<p class="muted" style="font-size:12.5px">${esc(err.message)}</p>`;
+    return;
+  }
+  if (!list.length) {
+    box.innerHTML = `<p class="muted" style="font-size:12.5px">尚未创建 API Token</p>`;
+    return;
+  }
+  box.innerHTML = list.map((t) => {
+    const used = fmtTime(t.lastUsedAt);
+    const scopes = (t.scopes || []).join(", ");
+    return `
+    <div class="pk-item">
+      <svg class="icon"><use href="#i-key"/></svg>
+      <div class="pk-meta">
+        <div class="pk-name">${esc(t.name)} <span class="muted" style="font-weight:400">${esc(t.prefix)}…</span></div>
+        <div class="pk-sub">${esc(scopes)} · 创建于 ${fmtTime(t.createdAt)}${used ? " · 最近使用 " + used : ""}</div>
+      </div>
+      <button class="btn-icon" data-tok-del="${esc(t.id)}" title="吊销"><svg class="icon"><use href="#i-trash"/></svg></button>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-tok-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.tokDel;
+      const yes = await confirmDialog({
+        title: "吊销 API Token",
+        text: "吊销后使用该 Token 的助手将立即无法调用接口。此操作不可恢复。",
+        confirmText: "吊销",
+      });
+      if (yes) {
+        try {
+          await api("/api/tokens/" + encodeURIComponent(id), { method: "DELETE" });
+          toast("API Token 已吊销", "success");
         } catch (err) {
           toast(err.message, "error");
         }

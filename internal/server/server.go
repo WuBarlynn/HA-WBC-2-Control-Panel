@@ -44,39 +44,45 @@ func New(st *store.Store, webFS fs.FS, hk *homekit.Manager) *Server {
 	s.mux.HandleFunc("POST /api/passkey/login/begin", s.handlePasskeyLoginBegin)
 	s.mux.HandleFunc("POST /api/passkey/login/finish", s.handlePasskeyLoginFinish)
 
-	// 需要会话的接口
-	s.mux.Handle("POST /api/logout", s.authed(s.handleLogout))
-	s.mux.Handle("POST /api/password", s.authed(s.handleChangePassword))
-	s.mux.Handle("GET /api/passkey/list", s.authed(s.handlePasskeyList))
-	s.mux.Handle("POST /api/passkey/register/begin", s.authed(s.handlePasskeyRegisterBegin))
-	s.mux.Handle("POST /api/passkey/register/finish", s.authed(s.handlePasskeyRegisterFinish))
-	s.mux.Handle("DELETE /api/passkey/{id}", s.authed(s.handlePasskeyDelete))
-	s.mux.Handle("GET /api/homekit", s.authed(s.handleHomeKitStatus))
-	s.mux.Handle("PUT /api/homekit", s.authed(s.handleHomeKitConfigure))
-	s.mux.Handle("POST /api/homekit/reset", s.authed(s.handleHomeKitReset))
+	// 仅人类会话(禁止 API Token 自管密钥/改密/Passkey/HomeKit)
+	s.mux.Handle("POST /api/logout", s.sessionOnly(s.handleLogout))
+	s.mux.Handle("POST /api/password", s.sessionOnly(s.handleChangePassword))
+	s.mux.Handle("GET /api/passkey/list", s.sessionOnly(s.handlePasskeyList))
+	s.mux.Handle("POST /api/passkey/register/begin", s.sessionOnly(s.handlePasskeyRegisterBegin))
+	s.mux.Handle("POST /api/passkey/register/finish", s.sessionOnly(s.handlePasskeyRegisterFinish))
+	s.mux.Handle("DELETE /api/passkey/{id}", s.sessionOnly(s.handlePasskeyDelete))
+	s.mux.Handle("GET /api/homekit", s.sessionOnly(s.handleHomeKitStatus))
+	s.mux.Handle("PUT /api/homekit", s.sessionOnly(s.handleHomeKitConfigure))
+	s.mux.Handle("POST /api/homekit/reset", s.sessionOnly(s.handleHomeKitReset))
+	s.mux.Handle("GET /api/tokens", s.sessionOnly(s.handleListAPITokens))
+	s.mux.Handle("POST /api/tokens", s.sessionOnly(s.handleCreateAPIToken))
+	s.mux.Handle("DELETE /api/tokens/{id}", s.sessionOnly(s.handleDeleteAPIToken))
 
-	s.mux.Handle("GET /api/devices", s.authed(s.handleListDevices))
-	s.mux.Handle("POST /api/devices", s.authed(s.handleAddDevice))
-	s.mux.Handle("PUT /api/devices/{id}", s.authed(s.handleUpdateDevice))
-	s.mux.Handle("DELETE /api/devices/{id}", s.authed(s.handleDeleteDevice))
-	s.mux.Handle("POST /api/devices/{id}/test", s.authed(s.handleTestDevice))
-	s.mux.Handle("GET /api/overview", s.authed(s.handleOverview))
+	// 读:会话或 scope=read 的 API Token
+	s.mux.Handle("GET /api/devices", s.requireScope("read", s.handleListDevices))
+	s.mux.Handle("GET /api/overview", s.requireScope("read", s.handleOverview))
+	s.mux.Handle("GET /api/devices/{id}/status", s.requireScope("read", s.deviceHandler(s.opStatus)))
+	s.mux.Handle("GET /api/devices/{id}/info", s.requireScope("read", s.deviceHandler(s.opInfo)))
+	s.mux.Handle("GET /api/devices/{id}/device-state", s.requireScope("read", s.deviceHandler(s.opDeviceState)))
+	s.mux.Handle("GET /api/devices/{id}/wifi-list", s.requireScope("read", s.deviceHandler(s.opWifiList)))
+	s.mux.Handle("GET /api/devices/{id}/check-update", s.requireScope("read", s.deviceHandler(s.opCheckUpdate)))
+	s.mux.Handle("GET /api/devices/{id}/update-progress", s.requireScope("read", s.deviceHandler(s.opUpdateProgress)))
 
-	// 设备功能代理
-	s.mux.Handle("GET /api/devices/{id}/status", s.authed(s.deviceHandler(s.opStatus)))
-	s.mux.Handle("GET /api/devices/{id}/info", s.authed(s.deviceHandler(s.opInfo)))
-	s.mux.Handle("GET /api/devices/{id}/device-state", s.authed(s.deviceHandler(s.opDeviceState)))
-	s.mux.Handle("POST /api/devices/{id}/power", s.authed(s.deviceHandler(s.opPower)))
-	s.mux.Handle("POST /api/devices/{id}/restart", s.authed(s.deviceHandler(s.opRestart)))
-	s.mux.Handle("POST /api/devices/{id}/autostart", s.authed(s.deviceHandler(s.opAutoStart)))
-	s.mux.Handle("POST /api/devices/{id}/childlock", s.authed(s.deviceHandler(s.opChildLock)))
-	s.mux.Handle("POST /api/devices/{id}/force-shutdown", s.authed(s.deviceHandler(s.opForceShutdown)))
-	s.mux.Handle("POST /api/devices/{id}/wifi", s.authed(s.deviceHandler(s.opSetWiFi)))
-	s.mux.Handle("GET /api/devices/{id}/wifi-list", s.authed(s.deviceHandler(s.opWifiList)))
-	s.mux.Handle("GET /api/devices/{id}/check-update", s.authed(s.deviceHandler(s.opCheckUpdate)))
-	s.mux.Handle("GET /api/devices/{id}/update-progress", s.authed(s.deviceHandler(s.opUpdateProgress)))
-	s.mux.Handle("POST /api/devices/{id}/firmware-update", s.authed(s.deviceHandler(s.opFirmwareUpdate)))
-	s.mux.Handle("POST /api/devices/{id}/factory-reset", s.authed(s.deviceHandler(s.opFactoryReset)))
+	// 电源:会话或 scope=power
+	s.mux.Handle("POST /api/devices/{id}/power", s.requireScope("power", s.deviceHandler(s.opPower)))
+	s.mux.Handle("POST /api/devices/{id}/restart", s.requireScope("power", s.deviceHandler(s.opRestart)))
+	s.mux.Handle("POST /api/devices/{id}/autostart", s.requireScope("power", s.deviceHandler(s.opAutoStart)))
+	s.mux.Handle("POST /api/devices/{id}/childlock", s.requireScope("power", s.deviceHandler(s.opChildLock)))
+	s.mux.Handle("POST /api/devices/{id}/force-shutdown", s.requireScope("power", s.deviceHandler(s.opForceShutdown)))
+
+	// 设备 CRUD / 配网 / 固件 / 出厂 — 仅人类会话
+	s.mux.Handle("POST /api/devices", s.sessionOnly(s.handleAddDevice))
+	s.mux.Handle("PUT /api/devices/{id}", s.sessionOnly(s.handleUpdateDevice))
+	s.mux.Handle("DELETE /api/devices/{id}", s.sessionOnly(s.handleDeleteDevice))
+	s.mux.Handle("POST /api/devices/{id}/test", s.sessionOnly(s.handleTestDevice))
+	s.mux.Handle("POST /api/devices/{id}/wifi", s.sessionOnly(s.deviceHandler(s.opSetWiFi)))
+	s.mux.Handle("POST /api/devices/{id}/firmware-update", s.sessionOnly(s.deviceHandler(s.opFirmwareUpdate)))
+	s.mux.Handle("POST /api/devices/{id}/factory-reset", s.sessionOnly(s.deviceHandler(s.opFactoryReset)))
 
 	// 静态资源
 	s.mux.Handle("/", http.FileServer(http.FS(webFS)))
@@ -114,17 +120,6 @@ func bearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	tok := strings.TrimPrefix(h, "Bearer ")
 	return strings.TrimSuffix(strings.TrimSpace(tok), ";")
-}
-
-// authed 要求携带有效会话令牌。
-func (s *Server) authed(next http.HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.sessions.valid(bearerToken(r)) {
-			fail(w, http.StatusUnauthorized, "未登录或会话已过期")
-			return
-		}
-		next(w, r)
-	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

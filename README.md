@@ -2,7 +2,7 @@
 
 一个使用 Go 编写的 HA-WBC-2 局域网开机卡集中控制面板。程序以单个二进制运行，内嵌响应式中文 Web 页面，无数据库和前端构建依赖，适合部署在电脑、NAS、软路由或家庭服务器上。
 
-> 当前构建版本：`1.3.6`
+> 当前构建版本：`1.3.7`
 >
 > 原作者/项目维护者：**WuBarlynn**。复制、修改、分发或二次开发时，必须保留原作者版权声明和 MIT 许可证，并注明本项目来源。
 
@@ -35,6 +35,7 @@
 - 恢复设备出厂设置
 - 深色/浅色主题及移动端响应式布局
 - 管理员密码与 WebAuthn Passkey 登录：通过 HTTPS 域名访问时自动启用 Passkey 能力，无需额外配置即可注册并使用指纹、面容或安全密钥登录
+- **API Token（助手 / 自动化）**：在系统设置中创建长期 Bearer 凭据，供脚本或助手调用总览与电源等接口，无需每次输入密码或通行密钥；明文仅创建时显示一次，服务端只存哈希
 - Apple 家庭（HomeKit）桥接：在系统设置中启用、扫码配对并查看状态，每台开机卡提供主机电源、来电自启、童锁和温度组件，可通过家庭 App、Siri 与自动化控制
 - 内置模拟设备，方便在没有硬件时体验和测试
 
@@ -47,7 +48,7 @@
    │  控制台 Bearer 会话
    ▼
 Go HTTP Server
-   ├── 管理员认证 / Passkey
+   ├── 管理员认证 / Passkey / API Token
    ├── JSON 文件存储
    ├── HomeKit Bridge ── mDNS / HAP ── Apple 家庭 / Siri
    └── HA-WBC-2 API Client
@@ -60,29 +61,29 @@ Go HTTP Server
 
 ### 使用预编译程序
 
-从项目 Release 或本地 `dist/` 目录下载对应平台的 `1.3.6` 二进制：
+从项目 Release 或本地 `dist/` 目录下载对应平台的 `1.3.7` 二进制：
 
 | 平台 | 文件名 |
 | --- | --- |
-| Linux x86-64 | `ha-wbc-console_1.3.6_linux_amd64` |
-| Linux ARM64 | `ha-wbc-console_1.3.6_linux_arm64` |
-| macOS Intel | `ha-wbc-console_1.3.6_darwin_amd64` |
-| macOS Apple Silicon | `ha-wbc-console_1.3.6_darwin_arm64` |
-| Windows x86-64 | `ha-wbc-console_1.3.6_windows_amd64.exe` |
-| Windows ARM64 | `ha-wbc-console_1.3.6_windows_arm64.exe` |
-| Windows 32 位 | `ha-wbc-console_1.3.6_windows_386.exe` |
+| Linux x86-64 | `ha-wbc-console_1.3.7_linux_amd64` |
+| Linux ARM64 | `ha-wbc-console_1.3.7_linux_arm64` |
+| macOS Intel | `ha-wbc-console_1.3.7_darwin_amd64` |
+| macOS Apple Silicon | `ha-wbc-console_1.3.7_darwin_arm64` |
+| Windows x86-64 | `ha-wbc-console_1.3.7_windows_amd64.exe` |
+| Windows ARM64 | `ha-wbc-console_1.3.7_windows_arm64.exe` |
+| Windows 32 位 | `ha-wbc-console_1.3.7_windows_386.exe` |
 
 Linux/macOS：
 
 ```bash
-chmod +x ha-wbc-console_1.3.6_linux_amd64
-./ha-wbc-console_1.3.6_linux_amd64
+chmod +x ha-wbc-console_1.3.7_linux_amd64
+./ha-wbc-console_1.3.7_linux_amd64
 ```
 
 Windows：
 
 ```powershell
-.\ha-wbc-console_1.3.6_windows_amd64.exe
+.\ha-wbc-console_1.3.7_windows_amd64.exe
 ```
 
 打开 `http://127.0.0.1:8088`。首次运行时设置管理员密码，然后添加开机卡的名称、局域网地址和设备所连 WiFi 的密码。
@@ -159,6 +160,34 @@ HomeKit 使用局域网发现与本地加密通信。运行控制台的主机与
 
 未提供 `-cert` 和 `-key` 时，程序会在数据文件所在目录生成有效期十年的 ECDSA P-256 自签名证书。公网部署应使用可信 CA 签发的证书。
 
+
+## API Token（助手 / 自动化）
+
+用于让助手（如 Grok Bot）或脚本**长期自动调用**控制台 HTTP API，无需每次输入管理员密码或通行密钥。
+
+| 项 | 说明 |
+| --- | --- |
+| 用途 | 自动化读总览、开关机等；人类仍用密码 / Passkey 登录管理界面 |
+| 创建入口 | 登录后 → **系统设置 → API Token（助手 / 自动化）** |
+| 默认权限 | `read` + `power`（可读 overview/devices 等；可调 power/restart/autostart/childlock/force-shutdown） |
+| 不能做的事 | 用 API Token **不能**管理 Token、改密、Passkey、HomeKit，也不能做设备 CRUD / 配网 / 固件 / 出厂等管理操作（这些仅人类会话） |
+| 传递方式 | `Authorization: Bearer <token>`（前缀 `wbc_`） |
+| 存储 | 明文只在创建响应出现一次；`ha-wbc-data.json` 仅存 SHA-256 哈希 |
+
+调用示例（占位符，勿把真实 Token 写入仓库或聊天）：
+
+```bash
+curl -sS 'https://你的控制台域名/api/overview' \
+  -H 'Authorization: Bearer wbc_REPLACE_WITH_API_TOKEN'
+
+curl -sS -X POST 'https://你的控制台域名/api/devices/DEVICE_ID/power' \
+  -H 'Authorization: Bearer wbc_REPLACE_WITH_API_TOKEN' \
+  -H 'Content-Type: application/json' \
+  -d '{"state":true}'
+```
+
+更完整的 scope 表、管理接口与部署注意见 [`docs/API-Token.md`](docs/API-Token.md)。
+
 ## 从源码构建
 
 要求：Go 1.22 或更高版本。
@@ -171,7 +200,7 @@ go build -o ha-wbc-console .
 构建全部支持平台：
 
 ```bash
-VERSION=1.3.6 ./build.sh
+VERSION=1.3.7 ./build.sh
 ```
 
 输出位于 `dist/`，目标平台包括 Linux、macOS 和 Windows 的 amd64/arm64，以及 Windows 386。
@@ -185,7 +214,7 @@ VERSION=1.3.6 ./build.sh
 ├── build.sh                        # 多平台交叉编译
 ├── HA-WBC-2_API_Documentation.md   # 设备 API 参考文档
 ├── internal/
-│   ├── server/                     # 控制台 API、认证、设备代理、Passkey 与 HomeKit 配置路由
+│   ├── server/                     # 控制台 API、认证、API Token、设备代理、Passkey 与 HomeKit 配置路由
 │   ├── store/                      # JSON 持久化、密码哈希及 HomeKit 协议键值存储
 │   ├── homekit/                    # HAP 桥生命周期、组件映射、mDNS 与状态同步
 │   ├── wbc/                        # HA-WBC-2 HTTP API 客户端

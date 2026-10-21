@@ -22,10 +22,11 @@ import (
 const pbkdf2Iterations = 120000
 
 var (
-	ErrNotFound       = errors.New("设备不存在")
-	ErrBadPassword    = errors.New("密码错误")
-	ErrAlreadySetup   = errors.New("系统已初始化")
-	ErrNotInitialized = errors.New("系统尚未初始化")
+	ErrNotFound         = errors.New("设备不存在")
+	ErrBadPassword      = errors.New("密码错误")
+	ErrAlreadySetup     = errors.New("系统已初始化")
+	ErrNotInitialized   = errors.New("系统尚未初始化")
+	ErrAPITokenNotFound = errors.New("API Token 不存在")
 )
 
 // Device 一张开机卡的配置与缓存状态。
@@ -53,6 +54,17 @@ type Passkey struct {
 	LastUsedAt time.Time `json:"lastUsedAt,omitzero"`
 }
 
+// APIToken 一条持久化的应用层 API 令牌(仅存哈希,明文只在创建时返回一次)。
+type APIToken struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Hash       string    `json:"hash"`   // sha256 hex of plaintext token
+	Prefix     string    `json:"prefix"` // plaintext 前缀,便于识别
+	Scopes     []string  `json:"scopes"`
+	CreatedAt  time.Time `json:"createdAt"`
+	LastUsedAt time.Time `json:"lastUsedAt,omitzero"`
+}
+
 // HomeKitConfig 是 Apple 家庭桥接服务的持久化配置。
 type HomeKitConfig struct {
 	Enabled bool   `json:"enabled"`
@@ -67,6 +79,7 @@ type persisted struct {
 	UserHandle  []byte            `json:"userHandle,omitempty"` // WebAuthn 用户句柄
 	Devices     []*Device         `json:"devices"`
 	Passkeys    []*Passkey        `json:"passkeys,omitempty"`
+	APITokens   []*APIToken       `json:"apiTokens,omitempty"`
 	HomeKit     HomeKitConfig     `json:"homeKit,omitempty"`
 	HomeKitData map[string][]byte `json:"homeKitData,omitempty"` // HAP 桥身份、密钥与控制器配对记录
 }
@@ -532,6 +545,173 @@ func (s *Store) UpdatePasskeyUsage(id string, signCount uint32) {
 			return
 		}
 	}
+}
+
+// ---- API Token ----
+
+// DefaultAPITokenScopes 助手自动化默认权限:可读总览/设备状态 + 电源控制。
+var DefaultAPITokenScopes = []string{"read", "power"}
+
+// KnownAPITokenScopes 合法 scope 列表。
+var KnownAPITokenScopes = []string{"read", "power"}
+
+// APITokens 返回全部 API Token 的副本(含哈希,调用方勿对外暴露 Hash)。
+func (s *Store) APITokens() []APIToken {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]APIToken, 0, len(s.data.APITokens))
+	for _, t := range s.data.APITokens {
+		out = append(out, *t)
+	}
+	return out
+}
+
+// APITokenByID 按 ID 查找。
+func (s *Store) APITokenByID(id string) (APIToken, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.data.APITokens {
+		if t.ID == id {
+			return *t, true
+		}
+	}
+	return APIToken{}, false
+}
+
+// FindAPITokenByPlain 用明文令牌做常量时间哈希比对;命中则返回副本。
+func (s *Store) FindAPITokenByPlain(plain string) (APIToken, bool) {
+	if plain == "" {
+		return APIToken{}, false
+	}
+	want := hashAPIToken(plain)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.data.APITokens {
+		if subtle.ConstantTimeCompare([]byte(t.Hash), []byte(want)) == 1 {
+			return *t, true
+		}
+	}
+	return APIToken{}, false
+}
+
+// CreateAPIToken 生成明文令牌并持久化其哈希。返回 (记录不含明文, 明文, error)。
+// scopes 为空时使用 DefaultAPITokenScopes。
+func (s *Store) CreateAPIToken(name string, scopes []string) (APIToken, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "api-token"
+	}
+	scopes = normalizeScopes(scopes)
+	plain, err := generateAPITokenPlain()
+	if err != nil {
+		return APIToken{}, "", err
+	}
+	rec := APIToken{
+		ID:        randomID(),
+		Name:      name,
+		Hash:      hashAPIToken(plain),
+		Prefix:    tokenPrefix(plain),
+		Scopes:    scopes,
+		CreatedAt: time.Now(),
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := rec
+	s.data.APITokens = append(s.data.APITokens, &cp)
+	if err := s.save(); err != nil {
+		s.data.APITokens = s.data.APITokens[:len(s.data.APITokens)-1]
+		return APIToken{}, "", err
+	}
+	return rec, plain, nil
+}
+
+// DeleteAPIToken 吊销并删除。
+func (s *Store) DeleteAPIToken(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, t := range s.data.APITokens {
+		if t.ID == id {
+			s.data.APITokens = append(s.data.APITokens[:i], s.data.APITokens[i+1:]...)
+			return s.save()
+		}
+	}
+	return ErrAPITokenNotFound
+}
+
+// TouchAPITokenUsage 更新最近使用时间(尽力写入)。
+func (s *Store) TouchAPITokenUsage(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.data.APITokens {
+		if t.ID == id {
+			t.LastUsedAt = time.Now()
+			_ = s.save()
+			return
+		}
+	}
+}
+
+func hashAPIToken(plain string) string {
+	sum := sha256.Sum256([]byte(plain))
+	return hex.EncodeToString(sum[:])
+}
+
+func generateAPITokenPlain() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "wbc_" + hex.EncodeToString(b), nil
+}
+
+func tokenPrefix(plain string) string {
+	if len(plain) <= 12 {
+		return plain
+	}
+	return plain[:12]
+}
+
+func normalizeScopes(scopes []string) []string {
+	if len(scopes) == 0 {
+		out := make([]string, len(DefaultAPITokenScopes))
+		copy(out, DefaultAPITokenScopes)
+		return out
+	}
+	known := make(map[string]struct{}, len(KnownAPITokenScopes))
+	for _, k := range KnownAPITokenScopes {
+		known[k] = struct{}{}
+	}
+	seen := make(map[string]struct{})
+	var out []string
+	for _, sc := range scopes {
+		sc = strings.TrimSpace(strings.ToLower(sc))
+		if sc == "" {
+			continue
+		}
+		if _, ok := known[sc]; !ok {
+			continue
+		}
+		if _, dup := seen[sc]; dup {
+			continue
+		}
+		seen[sc] = struct{}{}
+		out = append(out, sc)
+	}
+	if len(out) == 0 {
+		out = make([]string, len(DefaultAPITokenScopes))
+		copy(out, DefaultAPITokenScopes)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func HasScope(scopes []string, want string) bool {
+	for _, s := range scopes {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- 密码哈希(PBKDF2-HMAC-SHA256, 标准库实现) ----
