@@ -14,19 +14,19 @@
 
 ```bash
 cd ~/dev/HA-WBC-2-Control-Panel
-VERSION=1.3.7 ./build.sh
+VERSION=1.3.8 ./build.sh
 # 或仅 OpenWrt：
 # CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
-#   -ldflags "-s -w -X main.version=1.3.7" \
-#   -o dist/ha-wbc-console_1.3.7_linux_arm64 .
+#   -ldflags "-s -w -X main.version=1.3.8" \
+#   -o dist/ha-wbc-console_1.3.8_linux_arm64 .
 ```
 
 校验示例（以本机构建产物为准，sha256 以实际文件为准）：
 
 ```bash
-ls -lh dist/ha-wbc-console_1.3.7_linux_arm64
-file dist/ha-wbc-console_1.3.7_linux_arm64
-shasum -a 256 dist/ha-wbc-console_1.3.7_linux_arm64
+ls -lh dist/ha-wbc-console_1.3.8_linux_arm64
+file dist/ha-wbc-console_1.3.8_linux_arm64
+shasum -a 256 dist/ha-wbc-console_1.3.8_linux_arm64
 ```
 
 也可从 GitHub Release 下载同名二进制。
