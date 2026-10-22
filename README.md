@@ -2,7 +2,7 @@
 
 一个使用 Go 编写的 HA-WBC-2 局域网开机卡集中控制面板。程序以单个二进制运行，内嵌响应式中文 Web 页面，无数据库和前端构建依赖，适合部署在电脑、NAS、软路由或家庭服务器上。
 
-> 当前构建版本：`1.3.7`
+> 当前构建版本：`1.3.8`
 >
 > 原作者/项目维护者：**WuBarlynn**。复制、修改、分发或二次开发时，必须保留原作者版权声明和 MIT 许可证，并注明本项目来源。
 
@@ -61,29 +61,29 @@ Go HTTP Server
 
 ### 使用预编译程序
 
-从项目 Release 或本地 `dist/` 目录下载对应平台的 `1.3.7` 二进制：
+从项目 Release 或本地 `dist/` 目录下载对应平台的 `1.3.8` 二进制：
 
 | 平台 | 文件名 |
 | --- | --- |
-| Linux x86-64 | `ha-wbc-console_1.3.7_linux_amd64` |
-| Linux ARM64 | `ha-wbc-console_1.3.7_linux_arm64` |
-| macOS Intel | `ha-wbc-console_1.3.7_darwin_amd64` |
-| macOS Apple Silicon | `ha-wbc-console_1.3.7_darwin_arm64` |
-| Windows x86-64 | `ha-wbc-console_1.3.7_windows_amd64.exe` |
-| Windows ARM64 | `ha-wbc-console_1.3.7_windows_arm64.exe` |
-| Windows 32 位 | `ha-wbc-console_1.3.7_windows_386.exe` |
+| Linux x86-64 | `ha-wbc-console_1.3.8_linux_amd64` |
+| Linux ARM64 | `ha-wbc-console_1.3.8_linux_arm64` |
+| macOS Intel | `ha-wbc-console_1.3.8_darwin_amd64` |
+| macOS Apple Silicon | `ha-wbc-console_1.3.8_darwin_arm64` |
+| Windows x86-64 | `ha-wbc-console_1.3.8_windows_amd64.exe` |
+| Windows ARM64 | `ha-wbc-console_1.3.8_windows_arm64.exe` |
+| Windows 32 位 | `ha-wbc-console_1.3.8_windows_386.exe` |
 
 Linux/macOS：
 
 ```bash
-chmod +x ha-wbc-console_1.3.7_linux_amd64
-./ha-wbc-console_1.3.7_linux_amd64
+chmod +x ha-wbc-console_1.3.8_linux_amd64
+./ha-wbc-console_1.3.8_linux_amd64
 ```
 
 Windows：
 
 ```powershell
-.\ha-wbc-console_1.3.7_windows_amd64.exe
+.\ha-wbc-console_1.3.8_windows_amd64.exe
 ```
 
 打开 `http://127.0.0.1:8088`。首次运行时设置管理员密码，然后添加开机卡的名称、局域网地址和设备所连 WiFi 的密码。
@@ -190,7 +190,7 @@ curl -sS -X POST 'https://你的控制台域名/api/devices/DEVICE_ID/power' \
 
 ## 从源码构建
 
-要求：Go 1.22 或更高版本。
+要求：Go 1.26 或更高版本。
 
 ```bash
 go test ./...
@@ -200,7 +200,7 @@ go build -o ha-wbc-console .
 构建全部支持平台：
 
 ```bash
-VERSION=1.3.7 ./build.sh
+VERSION=1.3.8 ./build.sh
 ```
 
 输出位于 `dist/`，目标平台包括 Linux、macOS 和 Windows 的 amd64/arm64，以及 Windows 386。
